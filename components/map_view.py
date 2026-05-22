@@ -2,6 +2,7 @@ import folium
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
+from typing import Optional
 
 _STYLES = {
     "Светлая (CartoDB)":      ("CartoDB positron",    False),
@@ -58,7 +59,7 @@ _DEPTH_LOW  = 10
 _DEPTH_HIGH = 20
 
 
-def render_map(df: pd.DataFrame, bbox: dict | None = None) -> None:
+def render_map(df: pd.DataFrame, bbox: Optional[dict] = None) -> None:
     _low, _high = _DEPTH_LOW, _DEPTH_HIGH
     if df.empty:
         st.warning("Нет землетрясений по текущим фильтрам.", icon=":material/filter_alt_off:")
