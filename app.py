@@ -23,7 +23,7 @@ st.markdown("""
     /* ── Tab bar ── */
     [data-testid="stTabs"] [data-baseweb="tab-list"] {
         gap: 6px;
-        border-bottom: 2px solid #e0e0e0;
+        border-bottom: 2px solid rgba(128,128,128,0.25);
         padding-bottom: 0;
     }
 
@@ -35,20 +35,22 @@ st.markdown("""
         border: 1px solid transparent !important;
         border-bottom: none !important;
         background: transparent !important;
-        color: #555 !important;
+        color: var(--text-color) !important;
+        opacity: 0.6;
         transition: background 0.15s, color 0.15s;
     }
 
     [data-testid="stTabs"] [data-baseweb="tab"]:hover {
-        background: #f0f2f6 !important;
-        color: #222 !important;
+        background: var(--secondary-background-color) !important;
+        opacity: 0.9;
     }
 
     [data-testid="stTabs"] [aria-selected="true"] {
-        background: #ffffff !important;
+        background: var(--background-color) !important;
         color: #e63946 !important;
-        border-color: #e0e0e0 !important;
-        border-bottom-color: #ffffff !important;
+        opacity: 1;
+        border-color: rgba(128,128,128,0.25) !important;
+        border-bottom-color: var(--background-color) !important;
     }
 
     [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
@@ -57,8 +59,8 @@ st.markdown("""
 
     /* metric cards */
     div[data-testid="metric-container"] {
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
+        background: var(--background-color);
+        border: 1px solid rgba(128,128,128,0.2);
         border-radius: 10px;
         padding: 1rem 1.2rem;
         box-shadow: 0 1px 4px rgba(0,0,0,0.07);
