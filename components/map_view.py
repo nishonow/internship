@@ -50,7 +50,7 @@ def _legend(dark: bool) -> str:
     """
 
 
-def render_map(df: pd.DataFrame) -> None:
+def render_map(df: pd.DataFrame, radius_circle: dict | None = None) -> None:
     if df.empty:
         st.warning("No earthquakes match the current filters.", icon=":material/filter_alt_off:")
         return
@@ -95,6 +95,28 @@ def render_map(df: pd.DataFrame) -> None:
     m.fit_bounds([sw, ne])
 
     m.get_root().html.add_child(folium.Element(_legend(is_dark)))
+
+    if radius_circle:
+        folium.Circle(
+            location=[radius_circle["lat"], radius_circle["lon"]],
+            radius=radius_circle["km"] * 1000,
+            color="#e63946",
+            weight=2,
+            fill=True,
+            fill_color="#e63946",
+            fill_opacity=0.06,
+            dash_array="6",
+            tooltip=f"Радиус фильтра: {radius_circle['km']} км",
+        ).add_to(m)
+        folium.CircleMarker(
+            location=[radius_circle["lat"], radius_circle["lon"]],
+            radius=6,
+            color="#e63946",
+            fill=True,
+            fill_color="#e63946",
+            fill_opacity=1,
+            tooltip="Центр фильтра",
+        ).add_to(m)
 
     for _, row in df.iterrows():
         origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"

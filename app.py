@@ -199,7 +199,8 @@ tab_map, tab_table, tab_stats = st.tabs([
 
 with tab_map:
     with st.spinner("Загрузка карты..."):
-        render_map(df)
+        circle = {"lat": center_lat, "lon": center_lon, "km": radius_km} if use_location else None
+        render_map(df, radius_circle=circle)
 
 with tab_table:
     render_table(df)
