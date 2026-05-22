@@ -7,7 +7,7 @@ _STYLES = {
     "Светлая (CartoDB)":      ("CartoDB positron",    False),
     "Тёмная (CartoDB)":       ("CartoDB dark_matter", True),
     "Улицы (OpenStreetMap)":  ("OpenStreetMap",       False),
-    "Рельеф (Stamen)":        ("Stamen Terrain",      False),
+    "Цветная (CartoDB)":       ("CartoDB voyager",     False),
     "Топо (Esri)":            ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", False),
     "Спутник (Esri)":         ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", False),
 }
