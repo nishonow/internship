@@ -14,11 +14,56 @@ st.set_page_config(
 st.markdown("""
 <style>
     [data-testid="stSidebar"] { min-width: 300px; }
+    [data-testid="stSidebar"] > div,
+    [data-testid="stSidebar"] > div > div,
+    [data-testid="stSidebarContent"],
+    [data-testid="stSidebarContent"] > div { padding-top: 0 !important; margin-top: 0 !important; }
+    [data-testid="stSidebarUserContent"] { padding-top: 1rem !important; }
 
-    .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
-    h1 { margin-bottom: 0.25rem !important; }
-    [data-testid="stTabs"] { margin-top: 0.25rem !important; }
+    .block-container { padding-top: 4rem !important; padding-bottom: 1rem !important; }
     hr { margin: 0.4rem 0 !important; }
+
+    /* reset button columns — shrink to content, vertically center */
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+    }
+    /* all form submit buttons compact */
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button {
+        padding: 0 8px !important;
+        min-height: 0 !important;
+        height: 1.5rem !important;
+        font-size: 0.95rem !important;
+        line-height: 1.5rem !important;
+        width: auto !important;
+        border-radius: 4px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button > div,
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button p {
+        padding: 0 !important;
+        margin: 0 !important;
+        line-height: 1 !important;
+    }
+    /* restore primary Построить button */
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"],
+    [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button[data-testid="baseButton-primaryFormSubmit"] {
+        height: auto !important;
+        min-height: 2.5rem !important;
+        padding: 0.45rem 1rem !important;
+        font-size: 1rem !important;
+        width: 100% !important;
+        border-radius: 0.5rem !important;
+        line-height: 1.6 !important;
+    }
+    /* reduce heading margins inside sidebar form */
+    [data-testid="stSidebar"] h4 {
+        margin-top: 0.4rem !important;
+        margin-bottom: 0.1rem !important;
+    }
 
     /* ── Tab bar ── */
     [data-testid="stTabs"] [data-baseweb="tab-list"] {
@@ -99,98 +144,126 @@ with st.sidebar:
     with st.spinner("Загрузка и обработка данных..."):
         df_raw = load_data(uploaded_file)
 
-    st.markdown("#### :material/calendar_month: Диапазон дат")
     min_date = df_raw["Origin"].min().date()
     max_date = df_raw["Origin"].max().date()
-    date_range = st.date_input(
-        "Выберите диапазон",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
-        label_visibility="collapsed",
-    )
-
-    st.markdown("#### :material/show_chart: Магнитуда (Ml)")
     ml_min, ml_max = float(df_raw["Ml"].min()), float(df_raw["Ml"].max())
-    mag_range = st.slider(
-        "Диапазон Ml",
-        min_value=ml_min,
-        max_value=ml_max,
-        value=(ml_min, ml_max),
-        step=0.1,
-        label_visibility="collapsed",
-    )
-
-    st.markdown("#### :material/arrow_downward: Глубина (км)")
     dep_min, dep_max = float(df_raw["Depth"].min()), float(df_raw["Depth"].max())
-    depth_range = st.slider(
-        "Диапазон глубины",
-        min_value=dep_min,
-        max_value=dep_max,
-        value=(dep_min, dep_max),
-        step=1.0,
-        label_visibility="collapsed",
-    )
+    _lat_min = round(float(df_raw["Lat"].min()), 4)
+    _lat_max = round(float(df_raw["Lat"].max()), 4)
+    _lon_min = round(float(df_raw["Lon"].min()), 4)
+    _lon_max = round(float(df_raw["Lon"].max()), 4)
 
-    st.markdown("#### :material/location_on: Фильтр по местоположению")
-    use_location = st.toggle("Включить фильтр по координатам и радиусу", value=False)
+    _dn = st.session_state.get("_date_reset_n", 0)
+    _ln = st.session_state.get("_loc_reset_n", 0)
 
-    _default_lat = round(float(df_raw["Lat"].mean()), 4)
-    _default_lon = round(float(df_raw["Lon"].mean()), 4)
-    center_lat = _default_lat
-    center_lon = _default_lon
-    radius_km = 200
+    with st.form("filters_form"):
+        _hc, _hr = st.columns([4, 1])
+        with _hc:
+            st.markdown("#### :material/calendar_month: Диапазон дат")
+        with _hr:
+            _reset_date = st.form_submit_button("↺", help="Сбросить даты")
 
-    if use_location:
-        col_lat, col_lon = st.columns(2)
-        with col_lat:
-            _lat_str = st.text_input("Широта", value=str(_default_lat), placeholder="например 42.3")
-        with col_lon:
-            _lon_str = st.text_input("Долгота", value=str(_default_lon), placeholder="например 75.0")
-        _radius_str = st.text_input("Радиус (км)", value="200", placeholder="например 200")
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            _d_start = st.date_input("С", value=min_date, key=f"ds_{_dn}", format="YYYY-MM-DD", label_visibility="collapsed")
+        with col_d2:
+            _d_end = st.date_input("По", value=max_date, key=f"de_{_dn}", format="YYYY-MM-DD", label_visibility="collapsed")
 
-        try:
-            center_lat = float(_lat_str)
-        except ValueError:
-            st.warning("Некорректная широта — используется значение по умолчанию.", icon=":material/warning:")
-        try:
-            center_lon = float(_lon_str)
-        except ValueError:
-            st.warning("Некорректная долгота — используется значение по умолчанию.", icon=":material/warning:")
-        try:
-            radius_km = max(1, int(float(_radius_str)))
-        except ValueError:
-            st.warning("Некорректный радиус — используется 200 км.", icon=":material/warning:")
+        st.markdown("#### :material/show_chart: Магнитуда (Ml)")
+        mag_range = st.slider(
+            "Диапазон Ml",
+            min_value=ml_min,
+            max_value=ml_max,
+            value=(ml_min, ml_max),
+            step=0.1,
+            label_visibility="collapsed",
+        )
+
+        st.markdown("#### :material/arrow_downward: Глубина (км)")
+        depth_range = st.slider(
+            "Диапазон глубины",
+            min_value=dep_min,
+            max_value=dep_max,
+            value=(dep_min, dep_max),
+            step=1.0,
+            label_visibility="collapsed",
+        )
 
 
-# ── Фильтрация ────────────────────────────────────────────────────────────────
+        _lc, _lr = st.columns([4, 1])
+        with _lc:
+            st.markdown("#### :material/location_on: Фильтр по области")
+        with _lr:
+            _reset_loc = st.form_submit_button("⟳", help="Сбросить область")
+
+        col_c, col_d = st.columns(2)
+        with col_c:
+            _s1 = st.text_input("Мин. широта", key=f"s1_{_ln}")
+            _s2 = st.text_input("Мин. долгота", key=f"s2_{_ln}")
+        with col_d:
+            _s3 = st.text_input("Макс. широта", key=f"s3_{_ln}")
+            _s4 = st.text_input("Макс. долгота", key=f"s4_{_ln}")
+
+        submitted = st.form_submit_button(
+            ":material/play_arrow: Построить",
+            use_container_width=True,
+            type="primary",
+        )
+
+    if _reset_date:
+        st.session_state["_date_reset_n"] = _dn + 1
+        st.rerun()
+    if _reset_loc:
+        st.session_state["_loc_reset_n"] = _ln + 1
+        st.rerun()
+
+    # ── Только при нажатии Построить сохраняем все фильтры ────────────────────
+    if submitted:
+        _new_bbox = None
+        if _s1 or _s2 or _s3 or _s4:
+            try:
+                _new_bbox = dict(
+                    lat_min=float(_s1) if _s1 else _lat_min,
+                    lon_min=float(_s2) if _s2 else _lon_min,
+                    lat_max=float(_s3) if _s3 else _lat_max,
+                    lon_max=float(_s4) if _s4 else _lon_max,
+                )
+            except ValueError:
+                st.sidebar.warning("Некорректные координаты.", icon=":material/warning:")
+        st.session_state["bbox"]              = _new_bbox
+        st.session_state["applied_d_start"]   = _d_start
+        st.session_state["applied_d_end"]     = _d_end
+        st.session_state["applied_mag"]       = mag_range
+        st.session_state["applied_depth"]     = depth_range
+
+
+# ── Фильтрация — только применённые значения из session_state ────────────────
 df = df_raw.copy()
+bbox = st.session_state.get("bbox")
 
-if len(date_range) == 2:
-    start_dt = pd.Timestamp(date_range[0])
-    end_dt = pd.Timestamp(date_range[1]) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+_ad_start = st.session_state.get("applied_d_start", str(min_date))
+_ad_end   = st.session_state.get("applied_d_end",   str(max_date))
+_amag     = st.session_state.get("applied_mag",     (ml_min,  ml_max))
+_adepth   = st.session_state.get("applied_depth",   (dep_min, dep_max))
+
+try:
+    start_dt = pd.Timestamp(_ad_start)
+    end_dt   = pd.Timestamp(_ad_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     df = df[(df["Origin"] >= start_dt) & (df["Origin"] <= end_dt)]
+except Exception:
+    pass
 
-df = df[(df["Ml"] >= mag_range[0]) & (df["Ml"] <= mag_range[1])]
-df = df[(df["Depth"] >= depth_range[0]) & (df["Depth"] <= depth_range[1])]
+df = df[(df["Ml"] >= _amag[0]) & (df["Ml"] <= _amag[1])]
+df = df[(df["Depth"] >= _adepth[0]) & (df["Depth"] <= _adepth[1])]
 
-if use_location:
-    from math import radians, sin, cos, sqrt, atan2
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371
-        dlat = radians(lat2 - lat1)
-        dlon = radians(lon2 - lon1)
-        a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-        return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+if bbox:
     df = df[
-        df.apply(lambda r: haversine(center_lat, center_lon, r["Lat"], r["Lon"]) <= radius_km, axis=1)
+        (df["Lat"] >= bbox["lat_min"]) & (df["Lat"] <= bbox["lat_max"]) &
+        (df["Lon"] >= bbox["lon_min"]) & (df["Lon"] <= bbox["lon_max"])
     ]
 
 
 # ── Основная область ──────────────────────────────────────────────────────────
-st.markdown("# :material/earthquake: Панель визуализации землетрясений")
-st.divider()
-
 tab_map, tab_table, tab_stats = st.tabs([
     ":material/map: Карта",
     ":material/table_chart: Таблица",
@@ -199,8 +272,7 @@ tab_map, tab_table, tab_stats = st.tabs([
 
 with tab_map:
     with st.spinner("Загрузка карты..."):
-        circle = {"lat": center_lat, "lon": center_lon, "km": radius_km} if use_location else None
-        render_map(df, radius_circle=circle)
+        render_map(df, bbox=bbox)
 
 with tab_table:
     render_table(df)
