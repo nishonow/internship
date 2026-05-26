@@ -146,8 +146,6 @@ with st.sidebar:
 
     min_date = df_raw["Origin"].min().date()
     max_date = df_raw["Origin"].max().date()
-    ml_min, ml_max = float(df_raw["Ml"].min()), float(df_raw["Ml"].max())
-    dep_min, dep_max = float(df_raw["Depth"].min()), float(df_raw["Depth"].max())
     _lat_min = round(float(df_raw["Lat"].min()), 4)
     _lat_max = round(float(df_raw["Lat"].max()), 4)
     _lon_min = round(float(df_raw["Lon"].min()), 4)
@@ -168,27 +166,6 @@ with st.sidebar:
             _d_start = st.date_input("С", value=min_date, key=f"ds_{_dn}", format="YYYY-MM-DD", label_visibility="collapsed")
         with col_d2:
             _d_end = st.date_input("По", value=max_date, key=f"de_{_dn}", format="YYYY-MM-DD", label_visibility="collapsed")
-
-        st.markdown("#### :material/show_chart: Магнитуда (Ml)")
-        mag_range = st.slider(
-            "Диапазон Ml",
-            min_value=ml_min,
-            max_value=ml_max,
-            value=(ml_min, ml_max),
-            step=0.1,
-            label_visibility="collapsed",
-        )
-
-        st.markdown("#### :material/arrow_downward: Глубина (км)")
-        depth_range = st.slider(
-            "Диапазон глубины",
-            min_value=dep_min,
-            max_value=dep_max,
-            value=(dep_min, dep_max),
-            step=1.0,
-            label_visibility="collapsed",
-        )
-
 
         _lc, _lr = st.columns([4, 1])
         with _lc:
@@ -230,11 +207,9 @@ with st.sidebar:
                 )
             except ValueError:
                 st.sidebar.warning("Некорректные координаты.", icon=":material/warning:")
-        st.session_state["bbox"]              = _new_bbox
-        st.session_state["applied_d_start"]   = _d_start
-        st.session_state["applied_d_end"]     = _d_end
-        st.session_state["applied_mag"]       = mag_range
-        st.session_state["applied_depth"]     = depth_range
+        st.session_state["bbox"]            = _new_bbox
+        st.session_state["applied_d_start"] = _d_start
+        st.session_state["applied_d_end"]   = _d_end
 
 
 # ── Фильтрация — только применённые значения из session_state ────────────────
@@ -243,8 +218,6 @@ bbox = st.session_state.get("bbox")
 
 _ad_start = st.session_state.get("applied_d_start", str(min_date))
 _ad_end   = st.session_state.get("applied_d_end",   str(max_date))
-_amag     = st.session_state.get("applied_mag",     (ml_min,  ml_max))
-_adepth   = st.session_state.get("applied_depth",   (dep_min, dep_max))
 
 try:
     start_dt = pd.Timestamp(_ad_start)
@@ -252,9 +225,6 @@ try:
     df = df[(df["Origin"] >= start_dt) & (df["Origin"] <= end_dt)]
 except Exception:
     pass
-
-df = df[(df["Ml"] >= _amag[0]) & (df["Ml"] <= _amag[1])]
-df = df[(df["Depth"] >= _adepth[0]) & (df["Depth"] <= _adepth[1])]
 
 if bbox:
     df = df[
