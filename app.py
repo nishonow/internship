@@ -5,6 +5,7 @@ from datetime import date
 from components.map_view import render_map
 from components.table_view import render_table
 from components.stats_view import render_stats
+from components.stations_view import render_stations
 
 st.set_page_config(
     page_title="Визуализатор землетрясений",
@@ -116,16 +117,44 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+_REQUIRED_EQ_COLS = ["Origin", "Lat", "Lon", "Ml"]
+_REQUIRED_ST_COLS = ["Lat", "Lon"]
+
+
 @st.cache_data
-def load_data(file) -> pd.DataFrame:
-    df = pd.read_excel(file)
+def load_stations(file):
+    try:
+        df = pd.read_excel(file)
+    except Exception:
+        return None, "Не удалось прочитать файл. Убедитесь, что это корректный Excel (.xlsx)."
     df.columns = df.columns.str.strip()
+    missing = [c for c in _REQUIRED_ST_COLS if c not in df.columns]
+    if missing:
+        return None, f"Отсутствуют обязательные колонки: {', '.join(missing)}. Ожидаются: Network, Station_code, Lat, Lon, Elevation."
+    for col in ["Lat", "Lon", "Elevation"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=["Lat", "Lon"]), None
+
+
+@st.cache_data
+def load_data(file):
+    try:
+        df = pd.read_excel(file)
+    except Exception:
+        return None, "Не удалось прочитать файл. Убедитесь, что это корректный Excel (.xlsx)."
+    df.columns = df.columns.str.strip()
+    missing = [c for c in _REQUIRED_EQ_COLS if c not in df.columns]
+    if missing:
+        return None, f"Отсутствуют обязательные колонки: {', '.join(missing)}. Ожидаются: Origin, Lat, Lon, Depth, Ml, K."
     df["Origin"] = pd.to_datetime(df["Origin"], errors="coerce")
     for col in ["Lat", "Lon", "Depth", "Ml", "K"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["Origin", "Lat", "Lon", "Ml"])
-    return df
+    if df.empty:
+        return None, "Файл не содержит строк с корректными данными (Origin, Lat, Lon, Ml)."
+    return df, None
 
 
 @st.fragment
@@ -150,9 +179,9 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
 
         col_d1, col_d2 = st.columns(2)
         with col_d1:
-            _d_start = st.date_input("С", value=min_date, min_value=date(1900, 1, 1), max_value=date(2100, 12, 31), key=f"ds_{_dn}", format="YYYY-MM-DD", label_visibility="collapsed")
+            _d_start_str = st.text_input("С", value=str(min_date), key=f"ds_{_dn}", placeholder="ГГГГ-ММ-ДД", label_visibility="collapsed")
         with col_d2:
-            _d_end = st.date_input("По", value=max_date, min_value=date(1900, 1, 1), max_value=date(2100, 12, 31), key=f"de_{_dn}", format="YYYY-MM-DD", label_visibility="collapsed")
+            _d_end_str = st.text_input("По", value=str(max_date), key=f"de_{_dn}", placeholder="ГГГГ-ММ-ДД", label_visibility="collapsed")
 
         _s1 = _s2 = _s3 = _s4 = ""
         _clat = _clon = _ckm = ""
@@ -187,7 +216,7 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
 
         submitted = st.form_submit_button(
             ":material/play_arrow: Построить",
-            use_container_width=True,
+            width="stretch",
             type="primary",
         )
 
@@ -199,6 +228,19 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
         st.rerun(scope="fragment")
 
     if submitted:
+        try:
+            _d_start = date.fromisoformat(_d_start_str.strip())
+        except ValueError:
+            st.error(f"Некорректная дата начала: «{_d_start_str}». Формат: ГГГГ-ММ-ДД", icon=":material/error:")
+            return
+        try:
+            _d_end = date.fromisoformat(_d_end_str.strip())
+        except ValueError:
+            st.error(f"Некорректная дата окончания: «{_d_end_str}». Формат: ГГГГ-ММ-ДД", icon=":material/error:")
+            return
+        if _d_start > _d_end:
+            st.error("Дата начала не может быть позже даты окончания.", icon=":material/error:")
+            return
         _new_bbox = None
         _new_circle = None
         if _filter_type == "Прямоугольник" and (_s1 or _s2 or _s3 or _s4):
@@ -239,7 +281,25 @@ with st.sidebar:
         st.stop()
 
     with st.spinner("Загрузка и обработка данных..."):
-        df_raw = load_data(uploaded_file)
+        df_raw, err = load_data(uploaded_file)
+    if err:
+        st.error(err, icon=":material/error:")
+        st.stop()
+
+    st.markdown("---")
+    stations_file = st.file_uploader(
+        "Загрузите данные о станциях (.xlsx)",
+        type=["xlsx"],
+        help="Excel файл с колонками: Network, Station_code, Lat, Lon, Elevation",
+        key="stations_upload",
+    )
+    df_stations = None
+    if stations_file is not None:
+        with st.spinner("Загрузка станций..."):
+            df_stations, st_err = load_stations(stations_file)
+        if st_err:
+            st.error(st_err, icon=":material/error:")
+            df_stations = None
 
     _render_filters(
         min_date=df_raw["Origin"].min().date(),
@@ -287,19 +347,29 @@ if circle:
 
 
 # ── Основная область ──────────────────────────────────────────────────────────
-tab_map, tab_table, tab_stats = st.tabs([
+tab_map, tab_table, tab_stats, tab_stations = st.tabs([
     ":material/map: Карта",
     ":material/table_chart: Таблица",
     ":material/bar_chart: Статистика",
+    ":material/sensors: Станции",
 ])
 
 with tab_map:
     with st.spinner("Загрузка карты..."):
-        render_map(df, bbox=bbox, circle=circle)
+        render_map(df, bbox=bbox, circle=circle, df_stations=df_stations)
 
 with tab_table:
     render_table(df)
 
 with tab_stats:
     render_stats(df_raw)
+
+with tab_stations:
+    if df_stations is not None:
+        render_stations(df_stations)
+    else:
+        st.info(
+            "Загрузите файл данных о станциях в боковой панели для просмотра.",
+            icon=":material/upload_file:",
+        )
 

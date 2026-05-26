@@ -5,6 +5,32 @@ from streamlit_folium import st_folium
 import pandas as pd
 from typing import Optional, Dict, Any
 
+_STATION_COLORS = {
+    "KN":  "#8e44ad",
+    "MAG": "#27ae60",
+    "KR":  "#2471a3",
+    "KC":  "#148f77",
+    "KZ":  "#d35400",
+    "QZ":  "#b7950b",
+    "TJ":  "#922b21",
+    "G":   "#566573",
+    "CK":  "#c0392b",
+    "GE":  "#1abc9c",
+}
+
+_NETWORK_NAMES = {
+    "KN":  "KNET (НС РАН)",
+    "MAG": "Геомагнитные станции (НС РАН)",
+    "KR":  "Кыргызстан",
+    "KC":  "ЦАИИЗ",
+    "KZ":  "Казахстан",
+    "QZ":  "Казахстан",
+    "TJ":  "Таджикистан",
+    "G":   "Международный",
+    "CK":  "ЦАИИЗ",
+    "GE":  "Кабул",
+}
+
 _STYLES = {
     "Светлая (CartoDB)":      ("CartoDB positron",    False),
     "Тёмная (CartoDB)":       ("CartoDB dark_matter", True),
@@ -13,6 +39,29 @@ _STYLES = {
     "Топо (Esri)":            ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", False),
     "Спутник (Esri)":         ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", False),
 }
+
+_SVG_SEISMIC = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
+    'fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+    '<polyline points="3,12 6,12 8,4 11,20 13,8 15,16 17,12 21,12"/>'
+    '</svg>'
+)
+
+_SVG_HOME = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" '
+    'fill="white">'
+    '<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>'
+    '</svg>'
+)
+
+_SVG_STAR = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
+    'fill="white">'
+    '<polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>'
+    '</svg>'
+)
+
+_NS_RAN = {"name": "НС РАН", "lat": 42.68011, "lon": 74.69265, "color": "#e8a020"}
 
 
 def _depth_color(depth: float, low: float, high: float) -> str:
@@ -60,21 +109,93 @@ _DEPTH_LOW  = 10
 _DEPTH_HIGH = 20
 
 
-def render_map(df: pd.DataFrame, bbox: Optional[dict] = None, circle: Optional[Dict[str, Any]] = None) -> None:
+def _station_icon(network: str) -> folium.DivIcon:
+    color = _STATION_COLORS.get(network, "#888888")
+    svg = _SVG_HOME if network == "MAG" else _SVG_SEISMIC
+    html = (
+        f'<div style="position:relative;text-align:center;width:32px;height:44px;">'
+        f'<div style="position:absolute;top:0;left:2px;width:28px;height:28px;'
+        f'background:{color};border-radius:50%;border:2px solid white;'
+        f'box-shadow:0 2px 6px rgba(0,0,0,0.5);display:flex;'
+        f'align-items:center;justify-content:center;">'
+        f'{svg}</div>'
+        f'<div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);'
+        f'width:0;height:0;border-left:7px solid transparent;'
+        f'border-right:7px solid transparent;border-top:16px solid {color};">'
+        f'</div></div>'
+    )
+    return folium.DivIcon(html=html, icon_size=(32, 44), icon_anchor=(16, 44))
+
+
+@st.dialog("Сети")
+def _seti_dialog(all_nets: list, has_stations: bool) -> None:
+    if all_nets:
+        for net in all_nets:
+            name = _NETWORK_NAMES.get(net, "")
+            label = f"{net} — {name}" if name else net
+            st.checkbox(label, value=st.session_state.get(f"map_net_{net}", False), key=f"dlg_net_{net}")
+        st.divider()
+
+    st.checkbox("НС РАН", value=st.session_state.get("map_ns_ran", False), key="dlg_ns_ran")
+    st.checkbox("Землетрясения", value=st.session_state.get("show_earthquakes", True), key="dlg_earthquakes")
+
+    if st.button("Применить", type="primary", use_container_width=True):
+        if has_stations:
+            for net in all_nets:
+                st.session_state[f"map_net_{net}"] = st.session_state[f"dlg_net_{net}"]
+        st.session_state["map_ns_ran"] = st.session_state["dlg_ns_ran"]
+        st.session_state["show_earthquakes"] = st.session_state["dlg_earthquakes"]
+        st.rerun()
+
+
+@st.fragment
+def _layer_controls(all_nets: list, has_stations: bool) -> None:
+    if st.button("Сети"):
+        _seti_dialog(all_nets, has_stations)
+
+
+def render_map(
+    df: pd.DataFrame,
+    bbox: Optional[dict] = None,
+    circle: Optional[Dict[str, Any]] = None,
+    df_stations: Optional[pd.DataFrame] = None,
+) -> None:
     _low, _high = _DEPTH_LOW, _DEPTH_HIGH
     if df.empty:
         st.warning("Нет землетрясений по текущим фильтрам.", icon=":material/filter_alt_off:")
         return
 
-    col_style, _ = st.columns([2, 5])
+    has_stations = df_stations is not None and not df_stations.empty
+
+    # ── Init session state (first load only) ──────────────────────────────────
+    if "show_earthquakes" not in st.session_state:
+        st.session_state["show_earthquakes"] = True
+    if "map_ns_ran" not in st.session_state:
+        st.session_state["map_ns_ran"] = False
+
+    if has_stations:
+        all_nets = sorted(df_stations["Network"].dropna().unique().tolist())
+        for net in all_nets:
+            if f"map_net_{net}" not in st.session_state:
+                st.session_state[f"map_net_{net}"] = False
+    else:
+        all_nets = []
+
+    # ── Controls row ──────────────────────────────────────────────────────────
+    col_style, col_btn = st.columns([2, 4], vertical_alignment="bottom")
+
     with col_style:
         style_name = st.selectbox(
-            "Стиль карты",
-            list(_STYLES.keys()),
-            index=0,
-            key="map_style",
+            "Стиль карты", list(_STYLES.keys()), index=0, key="map_style",
         )
 
+    with col_btn:
+        _layer_controls(all_nets, has_stations)
+
+    # ── Read final layer state ────────────────────────────────────────────────
+    show_earthquakes = st.session_state.get("show_earthquakes", True)
+
+    # ── Build Folium map ──────────────────────────────────────────────────────
     tile_url, is_dark = _STYLES[style_name]
     is_custom_url = tile_url.startswith("http")
 
@@ -86,82 +207,120 @@ def render_map(df: pd.DataFrame, bbox: Optional[dict] = None, circle: Optional[D
     zoom = max(2, min(12, int(math.log2(360 / span)) - 1)) if span > 0 else 8
 
     if is_custom_url:
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=zoom,
-            tiles=None,
-            control_scale=True,
-        )
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=None, control_scale=True)
         folium.TileLayer(tiles=tile_url, attr="Esri", name=style_name).add_to(m)
     else:
-        m = folium.Map(
-            location=[center_lat, center_lon],
-            zoom_start=zoom,
-            tiles=tile_url,
-            control_scale=True,
-        )
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=tile_url, control_scale=True)
 
     m.get_root().html.add_child(folium.Element(_legend(is_dark, _low, _high)))
+    m.get_root().html.add_child(folium.Element("<style>.leaflet-control-attribution{display:none!important}</style>"))
 
     if circle:
         folium.Circle(
             location=[circle["lat"], circle["lon"]],
             radius=circle["radius_km"] * 1000,
-            color="#e63946",
-            weight=2,
-            fill=True,
-            fill_color="#e63946",
-            fill_opacity=0.05,
-            dash_array="6",
+            color="#e63946", weight=2, fill=True,
+            fill_color="#e63946", fill_opacity=0.05, dash_array="6",
         ).add_to(m)
 
     if bbox:
         folium.Rectangle(
-            bounds=[
-                [bbox["lat_min"], bbox["lon_min"]],
-                [bbox["lat_max"], bbox["lon_max"]],
-            ],
-            color="#e63946",
-            weight=2,
-            fill=True,
-            fill_color="#e63946",
-            fill_opacity=0.05,
-            dash_array="6",
+            bounds=[[bbox["lat_min"], bbox["lon_min"]], [bbox["lat_max"], bbox["lon_max"]]],
+            color="#e63946", weight=2, fill=True,
+            fill_color="#e63946", fill_opacity=0.05, dash_array="6",
         ).add_to(m)
 
-    for _, row in df.iterrows():
-        origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"
-        depth_val = f"{row['Depth']:.1f}" if pd.notna(row.get("Depth")) else "N/A"
-        k_val = f"{row['K']:.1f}" if pd.notna(row.get("K")) else "—"
-        ml_val = f"{row['Ml']:.1f}" if pd.notna(row.get("Ml")) else "N/A"
+    # Earthquake markers
+    if show_earthquakes:
+        for _, row in df.iterrows():
+            origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"
+            depth_val = f"{row['Depth']:.1f}" if pd.notna(row.get("Depth")) else "N/A"
+            k_val = f"{row['K']:.1f}" if pd.notna(row.get("K")) else "—"
+            ml_val = f"{row['Ml']:.1f}" if pd.notna(row.get("Ml")) else "N/A"
+            popup_html = (
+                f"<div style='font-size:13px;line-height:1.8'>"
+                f"<b>Дата:</b> {origin_str}<br>"
+                f"<b>Широта:</b> {row['Lat']:.4f}<br>"
+                f"<b>Долгота:</b> {row['Lon']:.4f}<br>"
+                f"<b>Глубина:</b> {depth_val} км<br>"
+                f"<b>M:</b> {ml_val}<br>"
+                f"<b>K:</b> {k_val}"
+                f"</div>"
+            )
+            folium.CircleMarker(
+                location=[row["Lat"], row["Lon"]],
+                radius=_marker_radius(row),
+                color=_depth_color(row.get("Depth", 0), _low, _high),
+                fill=True,
+                fill_color=_depth_color(row.get("Depth", 0), _low, _high),
+                fill_opacity=0.85,
+                weight=1.5,
+                popup=folium.Popup(popup_html, max_width=220),
+            ).add_to(m)
 
+    # Station markers (per-network filter)
+    if has_stations:
+        for _, srow in df_stations.iterrows():
+            if pd.isna(srow.get("Lat")) or pd.isna(srow.get("Lon")):
+                continue
+            net  = str(srow.get("Network", ""))
+            code = str(srow.get("Station_code", ""))
+            if not st.session_state.get(f"map_net_{net}", False):
+                continue
+            elev = srow.get("Elevation")
+            elev_str = f"{float(elev):.0f} м" if pd.notna(elev) else "—"
+            popup_html = (
+                f"<div style='font-size:13px;line-height:1.8'>"
+                f"<b>{code}</b><br>"
+                f"<b>Сеть:</b> {net}<br>"
+                f"<b>Широта:</b> {float(srow['Lat']):.4f}<br>"
+                f"<b>Долгота:</b> {float(srow['Lon']):.4f}<br>"
+                f"<b>Высота:</b> {elev_str}"
+                f"</div>"
+            )
+            folium.Marker(
+                location=[float(srow["Lat"]), float(srow["Lon"])],
+                icon=_station_icon(net),
+                popup=folium.Popup(popup_html, max_width=200),
+            ).add_to(m)
+
+    # НС РАН marker
+    if st.session_state.get("map_ns_ran", False):
+        color = _NS_RAN["color"]
+        html = (
+            f'<div style="position:relative;text-align:center;width:32px;height:44px;">'
+            f'<div style="position:absolute;top:0;left:2px;width:28px;height:28px;'
+            f'background:{color};border-radius:50%;border:2px solid white;'
+            f'box-shadow:0 2px 6px rgba(0,0,0,0.5);display:flex;'
+            f'align-items:center;justify-content:center;">'
+            f'{_SVG_STAR}</div>'
+            f'<div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);'
+            f'width:0;height:0;border-left:7px solid transparent;'
+            f'border-right:7px solid transparent;border-top:16px solid {color};">'
+            f'</div></div>'
+        )
         popup_html = (
             f"<div style='font-size:13px;line-height:1.8'>"
-            f"<b>Дата:</b> {origin_str}<br>"
-            f"<b>Широта:</b> {row['Lat']:.4f}<br>"
-            f"<b>Долгота:</b> {row['Lon']:.4f}<br>"
-            f"<b>Глубина:</b> {depth_val} км<br>"
-            f"<b>M:</b> {ml_val}<br>"
-            f"<b>K:</b> {k_val}"
+            f"<b>НС РАН</b><br>"
+            f"<b>Широта:</b> {_NS_RAN['lat']}<br>"
+            f"<b>Долгота:</b> {_NS_RAN['lon']}"
             f"</div>"
         )
-
-        folium.CircleMarker(
-            location=[row["Lat"], row["Lon"]],
-            radius=_marker_radius(row),
-            color=_depth_color(row.get("Depth", 0), _low, _high),
-            fill=True,
-            fill_color=_depth_color(row.get("Depth", 0), _low, _high),
-            fill_opacity=0.85,
-            weight=1.5,
-            popup=folium.Popup(popup_html, max_width=220),
+        folium.Marker(
+            location=[_NS_RAN["lat"], _NS_RAN["lon"]],
+            icon=folium.DivIcon(html=html, icon_size=(32, 44), icon_anchor=(16, 44)),
+            popup=folium.Popup(popup_html, max_width=200),
         ).add_to(m)
 
-
+    # Stable map key — changes only when visible content changes
     map_key = f"map_{len(df)}_{center_lat:.4f}_{center_lon:.4f}_{zoom}"
     if bbox:
         map_key += f"_b{bbox['lat_min']}{bbox['lon_min']}{bbox['lat_max']}{bbox['lon_max']}"
     if circle:
         map_key += f"_c{circle['lat']}{circle['lon']}{circle['radius_km']}"
+    map_key += f"_eq{int(show_earthquakes)}_ns{int(st.session_state.get('map_ns_ran', False))}"
+    if has_stations:
+        active_nets_str = "".join(n for n in all_nets if st.session_state.get(f"map_net_{n}", False))
+        map_key += f"_st{active_nets_str}"
 
     st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
