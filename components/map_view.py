@@ -269,6 +269,8 @@ def render_map(
                 continue
             elev = srow.get("Elevation")
             elev_str = f"{float(elev):.0f} м" if pd.notna(elev) else "—"
+            info = srow.get("Info", "")
+            info_str = str(info).strip() if pd.notna(info) and str(info).strip() else ""
             popup_html = (
                 f"<div style='font-size:13px;line-height:1.8'>"
                 f"<b>{code}</b><br>"
@@ -276,7 +278,8 @@ def render_map(
                 f"<b>Широта:</b> {float(srow['Lat']):.4f}<br>"
                 f"<b>Долгота:</b> {float(srow['Lon']):.4f}<br>"
                 f"<b>Высота:</b> {elev_str}"
-                f"</div>"
+                + (f"<br><b>Оборудование:</b> {info_str}" if info_str else "")
+                + f"</div>"
             )
             folium.Marker(
                 location=[float(srow["Lat"]), float(srow["Lon"])],
@@ -324,3 +327,128 @@ def render_map(
         map_key += f"_st{active_nets_str}"
 
     st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
+
+    # ── Area overview ─────────────────────────────────────────────────────────
+    if not (bbox or circle):
+        return
+
+    eq_count = len(df)
+
+    if circle:
+        filter_icon = "◎"
+        filter_desc = f"Круг &nbsp;·&nbsp; центр {circle['lat']:.4f}°N, {circle['lon']:.4f}°E &nbsp;·&nbsp; радиус {circle['radius_km']:.0f} км"
+    else:
+        filter_desc = (
+            f"Прямоугольник &nbsp;·&nbsp; {bbox['lat_min']:.4f}°–{bbox['lat_max']:.4f}°N, "
+            f"{bbox['lon_min']:.4f}°–{bbox['lon_max']:.4f}°E"
+        )
+        filter_icon = "▭"
+
+    if eq_count > 0:
+        ml_min  = df["Ml"].min()
+        ml_max  = df["Ml"].max()
+        ml_mean = df["Ml"].mean()
+        d_min   = df["Depth"].min() if df["Depth"].notna().any() else None
+        d_max   = df["Depth"].max() if df["Depth"].notna().any() else None
+        t_min   = df["Origin"].min().strftime("%d.%m.%Y")
+        t_max   = df["Origin"].max().strftime("%d.%m.%Y")
+        depth_str = f"{d_min:.0f} – {d_max:.0f} км" if d_min is not None else "—"
+
+        stats_html = f"""
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;">
+          <div style="background:var(--background-color);border:1px solid rgba(128,128,128,0.18);
+               border-radius:10px;padding:14px 16px;text-align:center;">
+            <div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;
+                 letter-spacing:.6px;margin-bottom:8px;">Землетрясений</div>
+            <div style="font-size:28px;font-weight:800;color:#e63946;line-height:1;">{eq_count}</div>
+          </div>
+          <div style="background:var(--background-color);border:1px solid rgba(128,128,128,0.18);
+               border-radius:10px;padding:14px 16px;text-align:center;">
+            <div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;
+                 letter-spacing:.6px;margin-bottom:8px;">Магнитуда (Ml)</div>
+            <div style="font-size:20px;font-weight:700;line-height:1;">{ml_min:.1f} – {ml_max:.1f}</div>
+            <div style="font-size:12px;color:#999;margin-top:5px;">среднее {ml_mean:.1f}</div>
+          </div>
+          <div style="background:var(--background-color);border:1px solid rgba(128,128,128,0.18);
+               border-radius:10px;padding:14px 16px;text-align:center;">
+            <div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;
+                 letter-spacing:.6px;margin-bottom:8px;">Глубина</div>
+            <div style="font-size:20px;font-weight:700;line-height:1;">{depth_str}</div>
+          </div>
+          <div style="background:var(--background-color);border:1px solid rgba(128,128,128,0.18);
+               border-radius:10px;padding:14px 16px;text-align:center;">
+            <div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;
+                 letter-spacing:.6px;margin-bottom:8px;">Период</div>
+            <div style="font-size:15px;font-weight:700;line-height:1.3;">{t_min}<br>
+              <span style="color:#999;font-weight:400;font-size:12px;">→</span> {t_max}</div>
+          </div>
+        </div>"""
+    else:
+        stats_html = """
+        <div style="background:var(--background-color);border:1px solid rgba(128,128,128,0.18);
+             border-radius:10px;padding:14px 18px;color:#999;font-size:14px;margin-bottom:12px;">
+          В выбранной области нет землетрясений.
+        </div>"""
+
+    def _station_in_circle(row, c):
+        dlat = math.radians(row["Lat"] - c["lat"])
+        dlon = math.radians(row["Lon"] - c["lon"])
+        a = (math.sin(dlat / 2) ** 2 + math.cos(math.radians(c["lat"]))
+             * math.cos(math.radians(row["Lat"])) * math.sin(dlon / 2) ** 2)
+        return 6371 * 2 * math.asin(math.sqrt(a)) <= c["radius_km"]
+
+    # Stations in area
+    stations_html = ""
+    if has_stations:
+        active_nets = [n for n in all_nets if st.session_state.get(f"map_net_{n}", False)]
+        rows_html = ""
+        for net in active_nets:
+            net_df = df_stations[df_stations["Network"] == net]
+            if circle:
+                net_df = net_df[net_df.apply(_station_in_circle, axis=1, c=circle)]
+            elif bbox:
+                net_df = net_df[
+                    (net_df["Lat"] >= bbox["lat_min"]) & (net_df["Lat"] <= bbox["lat_max"]) &
+                    (net_df["Lon"] >= bbox["lon_min"]) & (net_df["Lon"] <= bbox["lon_max"])
+                ]
+            if net_df.empty:
+                continue
+            color     = _STATION_COLORS.get(net, "#888")
+            name      = _NETWORK_NAMES.get(net, "")
+            net_label = f"{net} — {name}" if name else net
+            pills     = "".join(
+                f"<span style='display:inline-block;background:rgba(128,128,128,0.1);"
+                f"border-radius:5px;padding:2px 8px;margin:2px 4px 2px 0;"
+                f"font-size:12px;font-weight:500;'>{c}</span>"
+                for c in net_df["Station_code"].dropna().astype(str)
+            )
+            rows_html += f"""
+            <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;
+                 border-top:1px solid rgba(128,128,128,0.12);">
+              <div style="width:11px;height:11px;border-radius:50%;background:{color};
+                   margin-top:4px;flex-shrink:0;box-shadow:0 0 0 2px {color}33;"></div>
+              <div style="flex:1;">
+                <span style="font-size:13px;font-weight:600;">{net_label}</span>
+                <span style="font-size:12px;color:#999;margin-left:8px;">{len(net_df)} ст.</span>
+                <div style="margin-top:5px;">{pills}</div>
+              </div>
+            </div>"""
+
+        if rows_html:
+            stations_html = f"""
+            <div style="background:var(--background-color);border:1px solid rgba(128,128,128,0.18);
+                 border-radius:10px;padding:14px 18px;margin-bottom:12px;">
+              <div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;
+                   letter-spacing:.6px;margin-bottom:4px;">Станции в области</div>
+              {rows_html}
+            </div>"""
+
+    st.html(
+        f"""<div style="margin-top:20px;">
+          <div style="font-size:11px;color:#aaa;margin-bottom:12px;letter-spacing:.3px;">
+            {filter_icon}&nbsp; {filter_desc}
+          </div>
+          {stats_html}
+          {stations_html}
+        </div>""",
+    )
