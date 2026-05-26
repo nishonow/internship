@@ -32,15 +32,21 @@ def render_table(df: pd.DataFrame) -> None:
     with col_count:
         st.caption(f"{len(display_df):,} записей")
 
-    st.dataframe(
-        display_df,
-        width="stretch",
-        height=520,
-        column_config={
-            "Lat": st.column_config.NumberColumn("Широта", format="%.4f"),
-            "Lon": st.column_config.NumberColumn("Долгота", format="%.4f"),
-            "Depth": st.column_config.NumberColumn("Глубина (км)", format="%.1f"),
-            "Ml": st.column_config.NumberColumn("Магнитуда (Ml)", format="%.1f"),
-            "K": st.column_config.NumberColumn("K", format="%.1f"),
-        },
-    )
+    def _depth_style(val):
+        if pd.isna(val):
+            return ""
+        if val < 10:
+            return "background-color: rgba(230,57,70,0.18); color: #e63946; font-weight:600"
+        elif val < 20:
+            return "background-color: rgba(244,162,97,0.18); color: #f4a261; font-weight:600"
+        else:
+            return "background-color: rgba(69,123,157,0.18); color: #457b9d; font-weight:600"
+
+    styled = display_df.style.format({
+        "Lat": "{:.4f}", "Lon": "{:.4f}",
+        "Depth": "{:.1f}", "Ml": "{:.1f}", "K": "{:.1f}",
+    }, na_rep="—")
+    if "Depth" in display_df.columns:
+        styled = styled.map(_depth_style, subset=["Depth"])
+
+    st.dataframe(styled, width="stretch", height=520)

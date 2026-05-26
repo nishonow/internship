@@ -1,8 +1,9 @@
 import folium
+import math
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
-from typing import Optional
+from typing import Optional, Dict, Any
 
 _STYLES = {
     "Светлая (CartoDB)":      ("CartoDB positron",    False),
@@ -59,7 +60,7 @@ _DEPTH_LOW  = 10
 _DEPTH_HIGH = 20
 
 
-def render_map(df: pd.DataFrame, bbox: Optional[dict] = None) -> None:
+def render_map(df: pd.DataFrame, bbox: Optional[dict] = None, circle: Optional[Dict[str, Any]] = None) -> None:
     _low, _high = _DEPTH_LOW, _DEPTH_HIGH
     if df.empty:
         st.warning("Нет землетрясений по текущим фильтрам.", icon=":material/filter_alt_off:")
@@ -76,13 +77,18 @@ def render_map(df: pd.DataFrame, bbox: Optional[dict] = None) -> None:
 
     tile_url, is_dark = _STYLES[style_name]
     is_custom_url = tile_url.startswith("http")
-    center_lat = df["Lat"].mean()
-    center_lon = df["Lon"].mean()
+
+    lat_min, lat_max = df["Lat"].min(), df["Lat"].max()
+    lon_min, lon_max = df["Lon"].min(), df["Lon"].max()
+    center_lat = (lat_min + lat_max) / 2
+    center_lon = (lon_min + lon_max) / 2
+    span = max(lat_max - lat_min, lon_max - lon_min)
+    zoom = max(2, min(12, int(math.log2(360 / span)) - 1)) if span > 0 else 8
 
     if is_custom_url:
         m = folium.Map(
             location=[center_lat, center_lon],
-            zoom_start=6,
+            zoom_start=zoom,
             tiles=None,
             control_scale=True,
         )
@@ -90,16 +96,24 @@ def render_map(df: pd.DataFrame, bbox: Optional[dict] = None) -> None:
     else:
         m = folium.Map(
             location=[center_lat, center_lon],
-            zoom_start=6,
+            zoom_start=zoom,
             tiles=tile_url,
             control_scale=True,
         )
 
-    sw = [df["Lat"].min(), df["Lon"].min()]
-    ne = [df["Lat"].max(), df["Lon"].max()]
-    m.fit_bounds([sw, ne])
-
     m.get_root().html.add_child(folium.Element(_legend(is_dark, _low, _high)))
+
+    if circle:
+        folium.Circle(
+            location=[circle["lat"], circle["lon"]],
+            radius=circle["radius_km"] * 1000,
+            color="#e63946",
+            weight=2,
+            fill=True,
+            fill_color="#e63946",
+            fill_opacity=0.05,
+            dash_array="6",
+        ).add_to(m)
 
     if bbox:
         folium.Rectangle(
@@ -124,6 +138,8 @@ def render_map(df: pd.DataFrame, bbox: Optional[dict] = None) -> None:
         popup_html = (
             f"<div style='font-size:13px;line-height:1.8'>"
             f"<b>Дата:</b> {origin_str}<br>"
+            f"<b>Широта:</b> {row['Lat']:.4f}<br>"
+            f"<b>Долгота:</b> {row['Lon']:.4f}<br>"
             f"<b>Глубина:</b> {depth_val} км<br>"
             f"<b>M:</b> {ml_val}<br>"
             f"<b>K:</b> {k_val}"
@@ -141,4 +157,11 @@ def render_map(df: pd.DataFrame, bbox: Optional[dict] = None) -> None:
             popup=folium.Popup(popup_html, max_width=220),
         ).add_to(m)
 
-    st_folium(m, width="100%", height=560, returned_objects=[])
+
+    map_key = f"map_{len(df)}_{center_lat:.4f}_{center_lon:.4f}_{zoom}"
+    if bbox:
+        map_key += f"_b{bbox['lat_min']}{bbox['lon_min']}{bbox['lat_max']}{bbox['lon_max']}"
+    if circle:
+        map_key += f"_c{circle['lat']}{circle['lon']}{circle['radius_km']}"
+
+    st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
