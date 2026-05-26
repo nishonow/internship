@@ -133,9 +133,9 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
     _dn = st.session_state.get("_date_reset_n", 0)
     _fn = st.session_state.get("_filter_reset_n", 0)
 
-    st.markdown("#### :material/filter_alt: Тип фильтра")
+    st.markdown("#### :material/select_all: Область выделения")
     _filter_type = st.selectbox(
-        "Тип фильтра",
+        "Область выделения",
         ["Нет", "Прямоугольник", "Круг"],
         key="filter_type_select",
         label_visibility="collapsed",
