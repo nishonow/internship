@@ -20,7 +20,7 @@ def render_stations(df: pd.DataFrame) -> None:
             "Lat":          st.column_config.NumberColumn("Широта",     format="%.4f"),
             "Lon":          st.column_config.NumberColumn("Долгота",    format="%.4f"),
             "Elevation":    st.column_config.NumberColumn("Высота, м",  format="%.0f"),
-            "Info":         st.column_config.TextColumn("Оборудование", width="large"),
+            "Info":         st.column_config.TextColumn("Info", width="large"),
         },
         hide_index=True,
     )

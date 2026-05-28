@@ -278,7 +278,7 @@ def render_map(
                 f"<b>Широта:</b> {float(srow['Lat']):.4f}<br>"
                 f"<b>Долгота:</b> {float(srow['Lon']):.4f}<br>"
                 f"<b>Высота:</b> {elev_str}"
-                + (f"<br><b>Оборудование:</b> {info_str}" if info_str else "")
+                + (f"<br><b>Info:</b> {info_str}" if info_str else "")
                 + f"</div>"
             )
             folium.Marker(
