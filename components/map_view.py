@@ -74,6 +74,8 @@ def _depth_color(depth: float, low: float, high: float) -> str:
 
 
 def _marker_radius(row) -> float:
+    # K (energy class) is preferred over Ml when available because it is a
+    # more precise local measure. Falls back to Ml if K is absent or NaN.
     k = row.get("K")
     if k is not None and pd.notna(k):
         return max(4, float(k) * 0.9)
@@ -105,6 +107,8 @@ def _legend(dark: bool, low: float, high: float) -> str:
     """
 
 
+# Depth thresholds in km that define the three color groups.
+# Change these two values to adjust grouping across the map, legend, and table.
 _DEPTH_LOW  = 10
 _DEPTH_HIGH = 20
 
@@ -127,6 +131,9 @@ def _station_icon(network: str) -> folium.DivIcon:
     return folium.DivIcon(html=html, icon_size=(32, 44), icon_anchor=(16, 44))
 
 
+# The dialog uses separate "dlg_" prefixed keys because Streamlit dialogs run
+# in an isolated scope. The Apply button copies the dialog state into the main
+# session_state keys that render_map reads, then reruns the full page.
 @st.dialog("Сети")
 def _seti_dialog(all_nets: list, has_stations: bool) -> None:
     if all_nets:
@@ -167,7 +174,7 @@ def render_map(
 
     has_stations = df_stations is not None and not df_stations.empty
 
-    # ── Init session state (first load only) ──────────────────────────────────
+    # Initialize layer visibility flags only on first load; preserve user choices on reruns.
     if "show_earthquakes" not in st.session_state:
         st.session_state["show_earthquakes"] = True
     if "map_ns_ran" not in st.session_state:
@@ -176,12 +183,12 @@ def render_map(
     if has_stations:
         all_nets = sorted(df_stations["Network"].dropna().unique().tolist())
         for net in all_nets:
+            # New networks found in a freshly uploaded file default to hidden.
             if f"map_net_{net}" not in st.session_state:
                 st.session_state[f"map_net_{net}"] = False
     else:
         all_nets = []
 
-    # ── Controls row ──────────────────────────────────────────────────────────
     col_style, col_btn = st.columns([2, 4], vertical_alignment="bottom")
 
     with col_style:
@@ -192,10 +199,8 @@ def render_map(
     with col_btn:
         _layer_controls(all_nets, has_stations)
 
-    # ── Read final layer state ────────────────────────────────────────────────
     show_earthquakes = st.session_state.get("show_earthquakes", True)
 
-    # ── Build Folium map ──────────────────────────────────────────────────────
     tile_url, is_dark = _STYLES[style_name]
     is_custom_url = tile_url.startswith("http")
 
@@ -206,6 +211,8 @@ def render_map(
     span = max(lat_max - lat_min, lon_max - lon_min)
     zoom = max(2, min(12, int(math.log2(360 / span)) - 1)) if span > 0 else 8
 
+    # Esri tile URLs must be added via TileLayer because Folium only recognises
+    # named providers (e.g. "OpenStreetMap") in the tiles= parameter directly.
     if is_custom_url:
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=None, control_scale=True)
         folium.TileLayer(tiles=tile_url, attr="Esri", name=style_name).add_to(m)
@@ -230,7 +237,6 @@ def render_map(
             fill_color="#e63946", fill_opacity=0.05, dash_array="6",
         ).add_to(m)
 
-    # Earthquake markers
     if show_earthquakes:
         for _, row in df.iterrows():
             origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"
@@ -258,7 +264,6 @@ def render_map(
                 popup=folium.Popup(popup_html, max_width=220),
             ).add_to(m)
 
-    # Station markers (per-network filter)
     if has_stations:
         for _, srow in df_stations.iterrows():
             if pd.isna(srow.get("Lat")) or pd.isna(srow.get("Lon")):
@@ -287,7 +292,6 @@ def render_map(
                 popup=folium.Popup(popup_html, max_width=200),
             ).add_to(m)
 
-    # НС РАН marker
     if st.session_state.get("map_ns_ran", False):
         color = _NS_RAN["color"]
         html = (
@@ -315,7 +319,8 @@ def render_map(
             popup=folium.Popup(popup_html, max_width=200),
         ).add_to(m)
 
-    # Stable map key — changes only when visible content changes
+    # A stable key prevents st_folium from re-rendering the map on every rerun.
+    # The key encodes all visible state so the map does refresh when data changes.
     map_key = f"map_{len(df)}_{center_lat:.4f}_{center_lon:.4f}_{zoom}"
     if bbox:
         map_key += f"_b{bbox['lat_min']}{bbox['lon_min']}{bbox['lat_max']}{bbox['lon_max']}"
@@ -326,9 +331,10 @@ def render_map(
         active_nets_str = "".join(n for n in all_nets if st.session_state.get(f"map_net_{n}", False))
         map_key += f"_st{active_nets_str}"
 
+    # returned_objects=[] stops the component from sending click/zoom events back
+    # to Python, which would otherwise trigger an unnecessary full page rerun.
     st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
 
-    # ── Area overview ─────────────────────────────────────────────────────────
     if not (bbox or circle):
         return
 
@@ -397,7 +403,6 @@ def render_map(
              * math.cos(math.radians(row["Lat"])) * math.sin(dlon / 2) ** 2)
         return 6371 * 2 * math.asin(math.sqrt(a)) <= c["radius_km"]
 
-    # Stations in area
     stations_html = ""
     if has_stations:
         active_nets = [n for n in all_nets if st.session_state.get(f"map_net_{n}", False)]

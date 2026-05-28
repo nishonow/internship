@@ -19,6 +19,8 @@ def render_table(df: pd.DataFrame) -> None:
     with col_count:
         st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
 
+    # Work on a copy so the datetime column is formatted as a string for display
+    # without mutating the original df that other tabs depend on.
     display_df = df.copy()
     if "Origin" in display_df.columns:
         display_df["Origin"] = display_df["Origin"].dt.strftime("%Y-%m-%d %H:%M:%S")

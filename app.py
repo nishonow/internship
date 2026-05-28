@@ -26,7 +26,6 @@ st.markdown("""
     .block-container { padding-top: 4rem !important; padding-bottom: 1rem !important; }
     hr { margin: 0.4rem 0 !important; }
 
-    /* reset button columns — shrink to content, vertically center */
     [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] {
         display: flex !important;
         align-items: center !important;
@@ -35,7 +34,6 @@ st.markdown("""
         margin: 0 !important;
         min-height: 0 !important;
     }
-    /* all form submit buttons compact */
     [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button {
         padding: 0 8px !important;
         min-height: 0 !important;
@@ -51,7 +49,6 @@ st.markdown("""
         margin: 0 !important;
         line-height: 1 !important;
     }
-    /* restore primary Построить button */
     [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"],
     [data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button[data-testid="baseButton-primaryFormSubmit"] {
         height: auto !important;
@@ -62,13 +59,11 @@ st.markdown("""
         border-radius: 0.5rem !important;
         line-height: 1.6 !important;
     }
-    /* reduce heading margins inside sidebar form */
     [data-testid="stSidebar"] h4 {
         margin-top: 0.4rem !important;
         margin-bottom: 0.1rem !important;
     }
 
-    /* ── Tab bar ── */
     [data-testid="stTabs"] [data-baseweb="tab-list"] {
         gap: 6px;
         border-bottom: 2px solid rgba(128,128,128,0.25);
@@ -105,7 +100,6 @@ st.markdown("""
         display: none !important;
     }
 
-    /* metric cards */
     div[data-testid="metric-container"] {
         background: var(--background-color);
         border: 1px solid rgba(128,128,128,0.2);
@@ -121,6 +115,8 @@ _REQUIRED_EQ_COLS = ["Origin", "Lat", "Lon", "Ml"]
 _REQUIRED_ST_COLS = ["Lat", "Lon"]
 
 
+# Streamlit reruns the entire script on every interaction, so @st.cache_data
+# prevents re-reading the Excel file on each rerun — it caches by file identity.
 @st.cache_data
 def load_stations(file):
     try:
@@ -157,8 +153,13 @@ def load_data(file):
     return df, None
 
 
+# @st.fragment makes this panel re-render independently without triggering a
+# full page rerun, so the map is not rebuilt while the user is still typing.
 @st.fragment
 def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
+    # Streamlit has no built-in way to reset a widget's value. Incrementing the
+    # key suffix forces Streamlit to treat it as a brand-new widget, which
+    # effectively resets it to its default value.
     _dn = st.session_state.get("_date_reset_n", 0)
     _fn = st.session_state.get("_filter_reset_n", 0)
 
@@ -265,7 +266,6 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
         st.rerun()
 
 
-# ── Боковая панель ────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## Визуализатор землетрясений")
     st.markdown("---")
@@ -311,7 +311,6 @@ with st.sidebar:
     )
 
 
-# ── Фильтрация — только применённые значения из session_state ────────────────
 def _haversine_km(lat1, lon1, lat2, lon2):
     R = 6371
     dlat = math.radians(lat2 - lat1)
@@ -329,6 +328,7 @@ _ad_end   = st.session_state.get("applied_d_end",   str(df_raw["Origin"].max().d
 
 try:
     start_dt = pd.Timestamp(_ad_start)
+    # Add almost a full day so the end date is inclusive (covers 23:59:59).
     end_dt   = pd.Timestamp(_ad_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
     df = df[(df["Origin"] >= start_dt) & (df["Origin"] <= end_dt)]
 except Exception:
@@ -346,7 +346,6 @@ if circle:
     ]
 
 
-# ── Основная область ──────────────────────────────────────────────────────────
 tab_map, tab_table, tab_stats, tab_stations = st.tabs([
     ":material/map: Карта",
     ":material/table_chart: Таблица",
@@ -362,6 +361,8 @@ with tab_table:
     render_table(df)
 
 with tab_stats:
+    # Intentionally passes the full unfiltered dataset so the Stats tab always
+    # shows the overall picture regardless of the active spatial/date filters.
     render_stats(df_raw)
 
 with tab_stations:

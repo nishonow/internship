@@ -25,7 +25,7 @@
 **1. Клонировать репозиторий**
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/nishonow/internship
 cd internship
 ```
 
@@ -80,6 +80,7 @@ streamlit run app.py
 | `Lat` | float | Широта |
 | `Lon` | float | Долгота |
 | `Elevation` | float | Высота в метрах (необязательный) |
+| `Info` | string | Дополнительная информация о станции (необязательный) |
 
 ## Структура проекта
 

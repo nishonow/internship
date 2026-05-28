@@ -73,6 +73,8 @@ def render_stats(df: pd.DataFrame) -> None:
 
     date_range = (df["Origin"].max() - df["Origin"].min()).days
 
+    # Auto-select time granularity so the chart stays readable at any date range:
+    # >2 years → group by year, >2 months → group by month, else group by day.
     if date_range > 730:
         grouped = df.groupby(df["Origin"].dt.strftime("%Y")).size().reset_index(name="count")
         x_title = "Год"
