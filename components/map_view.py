@@ -2,7 +2,9 @@ import folium
 import math
 import streamlit as st
 from streamlit_folium import st_folium
+from folium.plugins import FastMarkerCluster
 import pandas as pd
+from html import escape
 from typing import Optional, Dict, Any
 
 _STATION_COLORS = {
@@ -63,6 +65,27 @@ _SVG_STAR = (
 
 _NS_RAN = {"name": "НС РАН", "lat": 42.68011, "lon": 74.69265, "color": "#e8a020"}
 
+# FastMarkerCluster renders earthquake points in the browser instead of adding
+# thousands of Folium CircleMarker objects one by one in Python.
+_EQ_CLUSTER_CALLBACK = """
+function (row) {
+    var size = Math.max(6, Math.min(18, row[2] * 1.25));
+    var html = '<div style="width:' + size + 'px;height:' + size + 'px;' +
+        'border-radius:50%;background:' + row[3] + ';border:1px solid rgba(255,255,255,0.75);' +
+        'box-shadow:0 1px 3px rgba(0,0,0,0.28);opacity:0.72;"></div>';
+    var marker = L.marker(new L.LatLng(row[0], row[1]), {
+        icon: L.divIcon({
+            className: 'eq-fast-marker',
+            html: html,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2]
+        })
+    });
+    marker.bindPopup(row[4], {maxWidth: 220});
+    return marker;
+}
+"""
+
 
 def _depth_color(depth: float, low: float, high: float) -> str:
     if depth < low:
@@ -81,6 +104,35 @@ def _marker_radius(row) -> float:
         return max(4, float(k) * 0.9)
     ml = row.get("Ml", 2)
     return max(4, float(ml) * 3.5)
+
+
+def _earthquake_cluster_data(df: pd.DataFrame, low: float, high: float) -> list:
+    # The callback receives plain lists, so keep the payload compact and escape
+    # user-provided text before it becomes popup HTML.
+    data = []
+    for _, row in df.iterrows():
+        origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"
+        depth_val = f"{row['Depth']:.1f}" if pd.notna(row.get("Depth")) else "N/A"
+        k_val = f"{row['K']:.1f}" if pd.notna(row.get("K")) else "—"
+        ml_val = f"{row['Ml']:.1f}" if pd.notna(row.get("Ml")) else "N/A"
+        popup_html = (
+            f"<div style='font-size:13px;line-height:1.8'>"
+            f"<b>Дата:</b> {escape(origin_str)}<br>"
+            f"<b>Широта:</b> {row['Lat']:.4f}<br>"
+            f"<b>Долгота:</b> {row['Lon']:.4f}<br>"
+            f"<b>Глубина:</b> {escape(depth_val)} км<br>"
+            f"<b>M:</b> {escape(ml_val)}<br>"
+            f"<b>K:</b> {escape(k_val)}"
+            f"</div>"
+        )
+        data.append([
+            float(row["Lat"]),
+            float(row["Lon"]),
+            _marker_radius(row),
+            _depth_color(row.get("Depth", 0), low, high),
+            popup_html,
+        ])
+    return data
 
 
 def _legend(dark: bool, low: float, high: float) -> str:
@@ -192,8 +244,9 @@ def render_map(
     col_style, col_btn = st.columns([2, 4], vertical_alignment="bottom")
 
     with col_style:
+        style_names = list(_STYLES.keys())
         style_name = st.selectbox(
-            "Стиль карты", list(_STYLES.keys()), index=0, key="map_style",
+            "Стиль карты", style_names, index=0, key="map_style",
         )
 
     with col_btn:
@@ -220,7 +273,10 @@ def render_map(
         m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=tile_url, control_scale=True)
 
     m.get_root().html.add_child(folium.Element(_legend(is_dark, _low, _high)))
-    m.get_root().html.add_child(folium.Element("<style>.leaflet-control-attribution{display:none!important}</style>"))
+    m.get_root().html.add_child(folium.Element(
+        "<style>.leaflet-control-attribution{display:none!important}"
+        ".eq-fast-marker{background:transparent!important;border:none!important;}</style>"
+    ))
 
     if circle:
         folium.Circle(
@@ -238,31 +294,10 @@ def render_map(
         ).add_to(m)
 
     if show_earthquakes:
-        for _, row in df.iterrows():
-            origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"
-            depth_val = f"{row['Depth']:.1f}" if pd.notna(row.get("Depth")) else "N/A"
-            k_val = f"{row['K']:.1f}" if pd.notna(row.get("K")) else "—"
-            ml_val = f"{row['Ml']:.1f}" if pd.notna(row.get("Ml")) else "N/A"
-            popup_html = (
-                f"<div style='font-size:13px;line-height:1.8'>"
-                f"<b>Дата:</b> {origin_str}<br>"
-                f"<b>Широта:</b> {row['Lat']:.4f}<br>"
-                f"<b>Долгота:</b> {row['Lon']:.4f}<br>"
-                f"<b>Глубина:</b> {depth_val} км<br>"
-                f"<b>M:</b> {ml_val}<br>"
-                f"<b>K:</b> {k_val}"
-                f"</div>"
-            )
-            folium.CircleMarker(
-                location=[row["Lat"], row["Lon"]],
-                radius=_marker_radius(row),
-                color=_depth_color(row.get("Depth", 0), _low, _high),
-                fill=True,
-                fill_color=_depth_color(row.get("Depth", 0), _low, _high),
-                fill_opacity=0.85,
-                weight=1.5,
-                popup=folium.Popup(popup_html, max_width=220),
-            ).add_to(m)
+        FastMarkerCluster(
+            data=_earthquake_cluster_data(df, _low, _high),
+            callback=_EQ_CLUSTER_CALLBACK,
+        ).add_to(m)
 
     if has_stations:
         for _, srow in df_stations.iterrows():
@@ -278,12 +313,12 @@ def render_map(
             info_str = str(info).strip() if pd.notna(info) and str(info).strip() else ""
             popup_html = (
                 f"<div style='font-size:13px;line-height:1.8'>"
-                f"<b>{code}</b><br>"
-                f"<b>Сеть:</b> {net}<br>"
+                f"<b>{escape(code)}</b><br>"
+                f"<b>Сеть:</b> {escape(net)}<br>"
                 f"<b>Широта:</b> {float(srow['Lat']):.4f}<br>"
                 f"<b>Долгота:</b> {float(srow['Lon']):.4f}<br>"
                 f"<b>Высота:</b> {elev_str}"
-                + (f"<br><b>Info:</b> {info_str}" if info_str else "")
+                + (f"<br><b>Info:</b> {escape(info_str)}" if info_str else "")
                 + f"</div>"
             )
             folium.Marker(
@@ -321,7 +356,10 @@ def render_map(
 
     # A stable key prevents st_folium from re-rendering the map on every rerun.
     # The key encodes all visible state so the map does refresh when data changes.
-    map_key = f"map_{len(df)}_{center_lat:.4f}_{center_lon:.4f}_{zoom}"
+    style_idx = style_names.index(style_name)
+    time_start = int(df["Origin"].min().value) if "Origin" in df.columns else 0
+    time_end = int(df["Origin"].max().value) if "Origin" in df.columns else 0
+    map_key = f"map_{len(df)}_{center_lat:.4f}_{center_lon:.4f}_{zoom}_s{style_idx}_t{time_start}_{time_end}"
     if bbox:
         map_key += f"_b{bbox['lat_min']}{bbox['lon_min']}{bbox['lat_max']}{bbox['lon_max']}"
     if circle:
