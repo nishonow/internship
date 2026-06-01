@@ -2,7 +2,7 @@ import folium
 import math
 import streamlit as st
 from streamlit_folium import st_folium
-from folium.plugins import FastMarkerCluster
+from folium.plugins import Draw, FastMarkerCluster
 import pandas as pd
 from html import escape
 from typing import Optional, Dict, Any
@@ -213,16 +213,32 @@ def _layer_controls(all_nets: list, has_stations: bool) -> None:
         _seti_dialog(all_nets, has_stations)
 
 
+def _extract_drawn_bbox(map_data: Optional[dict]) -> Optional[dict]:
+    if not map_data:
+        return None
+    drawing = map_data.get("last_active_drawing")
+    if not drawing or drawing.get("geometry", {}).get("type") != "Polygon":
+        return None
+    coords = drawing["geometry"]["coordinates"][0]
+    return dict(
+        lat_min=min(c[1] for c in coords),
+        lat_max=max(c[1] for c in coords),
+        lon_min=min(c[0] for c in coords),
+        lon_max=max(c[0] for c in coords),
+    )
+
+
 def render_map(
     df: pd.DataFrame,
     bbox: Optional[dict] = None,
     circle: Optional[Dict[str, Any]] = None,
     df_stations: Optional[pd.DataFrame] = None,
-) -> None:
+    draw_mode: bool = False,
+) -> Optional[dict]:
     _low, _high = _DEPTH_LOW, _DEPTH_HIGH
     if df.empty:
         st.warning("Нет землетрясений по текущим фильтрам.", icon=":material/filter_alt_off:")
-        return
+        return None
 
     has_stations = df_stations is not None and not df_stations.empty
 
@@ -354,6 +370,19 @@ def render_map(
             popup=folium.Popup(popup_html, max_width=200),
         ).add_to(m)
 
+    if draw_mode:
+        Draw(
+            draw_options={
+                "rectangle": {"shapeOptions": {"color": "#e63946", "weight": 2, "fillOpacity": 0.05}},
+                "polygon": False,
+                "circle": False,
+                "marker": False,
+                "circlemarker": False,
+                "polyline": False,
+            },
+            edit_options={"edit": False, "remove": False},
+        ).add_to(m)
+
     # A stable key prevents st_folium from re-rendering the map on every rerun.
     # The key encodes all visible state so the map does refresh when data changes.
     style_idx = style_names.index(style_name)
@@ -364,17 +393,21 @@ def render_map(
         map_key += f"_b{bbox['lat_min']}{bbox['lon_min']}{bbox['lat_max']}{bbox['lon_max']}"
     if circle:
         map_key += f"_c{circle['lat']}{circle['lon']}{circle['radius_km']}"
-    map_key += f"_eq{int(show_earthquakes)}_ns{int(st.session_state.get('map_ns_ran', False))}"
+    map_key += f"_eq{int(show_earthquakes)}_ns{int(st.session_state.get('map_ns_ran', False))}_dm{int(draw_mode)}"
     if has_stations:
         active_nets_str = "".join(n for n in all_nets if st.session_state.get(f"map_net_{n}", False))
         map_key += f"_st{active_nets_str}"
 
-    # returned_objects=[] stops the component from sending click/zoom events back
-    # to Python, which would otherwise trigger an unnecessary full page rerun.
-    st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
+    # When draw_mode is on we need last_active_drawing back; otherwise suppress
+    # all events to avoid unnecessary full-page reruns on click/zoom.
+    if draw_mode:
+        _map_data = st_folium(m, width="100%", height=560, returned_objects=["last_active_drawing"], key=map_key)
+    else:
+        _map_data = None
+        st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
 
     if not (bbox or circle):
-        return
+        return _extract_drawn_bbox(_map_data)
 
     eq_count = len(df)
 
@@ -495,3 +528,4 @@ def render_map(
           {stations_html}
         </div>""",
     )
+    return _extract_drawn_bbox(_map_data)
