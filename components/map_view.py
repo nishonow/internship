@@ -228,13 +228,67 @@ def _extract_drawn_bbox(map_data: Optional[dict]) -> Optional[dict]:
     )
 
 
+@st.dialog("Выбор области на карте", width="large")
+def draw_bbox_dialog(lat_min: float, lat_max: float, lon_min: float, lon_max: float) -> None:
+    center_lat = (lat_min + lat_max) / 2
+    center_lon = (lon_min + lon_max) / 2
+    span = max(lat_max - lat_min, lon_max - lon_min)
+    zoom = max(2, min(10, int(math.log2(360 / span)) - 1)) if span > 0 else 6
+
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=zoom,
+        tiles="CartoDB positron",
+        control_scale=True,
+    )
+    m.get_root().html.add_child(folium.Element(
+        "<style>.leaflet-control-attribution{display:none!important}</style>"
+    ))
+    Draw(
+        draw_options={
+            "rectangle": {"shapeOptions": {"color": "#e63946", "weight": 2, "fillOpacity": 0.05}},
+            "polygon": False, "circle": False, "marker": False,
+            "circlemarker": False, "polyline": False,
+        },
+        edit_options={"edit": False, "remove": False},
+    ).add_to(m)
+
+    map_data = st_folium(
+        m, width="100%", height=430,
+        returned_objects=["last_active_drawing"],
+        key="draw_dlg_map",
+    )
+    bbox = _extract_drawn_bbox(map_data)
+
+    if bbox:
+        st.markdown(
+            f"<div style='font-size:0.82rem;color:#888;line-height:1.8;padding:2px 0;'>"
+            f"Ш: {bbox['lat_min']:.4f}° – {bbox['lat_max']:.4f}° &nbsp;·&nbsp; "
+            f"Д: {bbox['lon_min']:.4f}° – {bbox['lon_max']:.4f}°</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("Нажмите кнопку □ на карте, затем выделите прямоугольную область.")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("Применить", type="primary", use_container_width=True, disabled=bbox is None):
+            st.session_state["drawn_bbox"] = bbox
+            st.session_state["bbox"] = bbox
+            st.rerun()
+    with col_b:
+        if st.button("Сбросить", use_container_width=True):
+            st.session_state["drawn_bbox"] = None
+            st.session_state["bbox"] = None
+            st.rerun()
+
+
 def render_map(
     df: pd.DataFrame,
     bbox: Optional[dict] = None,
     circle: Optional[Dict[str, Any]] = None,
     df_stations: Optional[pd.DataFrame] = None,
-    draw_mode: bool = False,
-) -> Optional[dict]:
+) -> None:
     _low, _high = _DEPTH_LOW, _DEPTH_HIGH
     if df.empty:
         st.warning("Нет землетрясений по текущим фильтрам.", icon=":material/filter_alt_off:")
@@ -371,19 +425,6 @@ def render_map(
             popup=folium.Popup(popup_html, max_width=200),
         ).add_to(m)
 
-    if draw_mode:
-        Draw(
-            draw_options={
-                "rectangle": {"shapeOptions": {"color": "#e63946", "weight": 2, "fillOpacity": 0.05}},
-                "polygon": False,
-                "circle": False,
-                "marker": False,
-                "circlemarker": False,
-                "polyline": False,
-            },
-            edit_options={"edit": False, "remove": False},
-        ).add_to(m)
-
     # A stable key prevents st_folium from re-rendering the map on every rerun.
     # The key encodes all visible state so the map does refresh when data changes.
     style_idx = style_names.index(style_name)
@@ -394,21 +435,15 @@ def render_map(
         map_key += f"_b{bbox['lat_min']}{bbox['lon_min']}{bbox['lat_max']}{bbox['lon_max']}"
     if circle:
         map_key += f"_c{circle['lat']}{circle['lon']}{circle['radius_km']}"
-    map_key += f"_eq{int(show_earthquakes)}_ns{int(st.session_state.get('map_ns_ran', False))}_dm{int(draw_mode)}"
+    map_key += f"_eq{int(show_earthquakes)}_ns{int(st.session_state.get('map_ns_ran', False))}"
     if has_stations:
         active_nets_str = "".join(n for n in all_nets if st.session_state.get(f"map_net_{n}", False))
         map_key += f"_st{active_nets_str}"
 
-    # When draw_mode is on we need last_active_drawing back; otherwise suppress
-    # all events to avoid unnecessary full-page reruns on click/zoom.
-    if draw_mode:
-        _map_data = st_folium(m, width="100%", height=560, returned_objects=["last_active_drawing"], key=map_key)
-    else:
-        _map_data = None
-        st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
+    st_folium(m, width="100%", height=560, returned_objects=[], key=map_key)
 
     if not (bbox or circle):
-        return _extract_drawn_bbox(_map_data)
+        return
 
     eq_count = len(df)
 
@@ -529,4 +564,3 @@ def render_map(
           {stations_html}
         </div>""",
     )
-    return _extract_drawn_bbox(_map_data)
