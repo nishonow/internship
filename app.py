@@ -234,12 +234,15 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
     )
 
     if _filter_type == "Прямоугольник":
+        _prev_dm = st.session_state.get("_prev_draw_mode_rect", False)
         st.checkbox(
             "Нарисовать на карте",
             key="draw_mode_rect",
             help="Нарисуйте прямоугольник прямо на карте вместо ввода координат вручную.",
-            on_change=st.rerun,
         )
+        if st.session_state.get("draw_mode_rect", False) != _prev_dm:
+            st.session_state["_prev_draw_mode_rect"] = st.session_state.get("draw_mode_rect", False)
+            st.rerun(scope="app")
 
     with st.form("filters_form"):
         _hc, _hr = st.columns([4, 1], vertical_alignment="center")
