@@ -69,7 +69,7 @@ _NS_RAN = {"name": "НС РАН", "lat": 42.68011, "lon": 74.69265, "color": "#e
 # thousands of Folium CircleMarker objects one by one in Python.
 _EQ_CLUSTER_CALLBACK = """
 function (row) {
-    var size = Math.max(6, Math.min(18, row[2] * 1.25));
+    var size = Math.max(8, Math.min(26, row[2] * 1.6));
     var html = '<div style="width:' + size + 'px;height:' + size + 'px;' +
         'border-radius:50%;background:' + row[3] + ';border:1px solid rgba(255,255,255,0.75);' +
         'box-shadow:0 1px 3px rgba(0,0,0,0.28);opacity:0.72;"></div>';
@@ -101,9 +101,9 @@ def _marker_radius(row) -> float:
     # more precise local measure. Falls back to Ml if K is absent or NaN.
     k = row.get("K")
     if k is not None and pd.notna(k):
-        return max(4, float(k) * 0.9)
+        return max(5, float(k) * 1.1)
     ml = row.get("Ml", 2)
-    return max(4, float(ml) * 3.5)
+    return max(5, float(ml) * 4.5)
 
 
 def _earthquake_cluster_data(df: pd.DataFrame, low: float, high: float) -> list:

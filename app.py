@@ -238,6 +238,7 @@ def _render_filters(min_date, max_date, lat_min, lat_max, lon_min, lon_max):
             "Нарисовать на карте",
             key="draw_mode_rect",
             help="Нарисуйте прямоугольник прямо на карте вместо ввода координат вручную.",
+            on_change=st.rerun,
         )
 
     with st.form("filters_form"):
