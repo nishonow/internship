@@ -244,6 +244,19 @@ def draw_bbox_dialog(lat_min: float, lat_max: float, lon_min: float, lon_max: fl
     m.get_root().html.add_child(folium.Element(
         "<style>.leaflet-control-attribution{display:none!important}</style>"
     ))
+    m.get_root().html.add_child(folium.Element("""
+    <script>
+    (function() {
+    var dl = window.L && L.drawLocal;
+    if (!dl) return;
+    dl.draw.toolbar.actions.title = 'Отменить рисование';
+    dl.draw.toolbar.actions.text  = 'Отменить';
+    dl.draw.toolbar.buttons.rectangle = 'Нарисовать прямоугольник';
+    dl.draw.handlers.rectangle.tooltip.start       = 'Нажмите и перетащите для выделения области.';
+    dl.draw.handlers.simpleshape.tooltip.end        = 'Отпустите для завершения.';
+    })();
+    </script>
+    """))
     Draw(
         draw_options={
             "rectangle": {"shapeOptions": {"color": "#e63946", "weight": 2, "fillOpacity": 0.05}},
