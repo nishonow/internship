@@ -1,0 +1,149 @@
+[data-testid="stSidebar"] { min-width: 300px; }
+[data-testid="stSidebar"] > div,
+[data-testid="stSidebar"] > div > div,
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarContent"] > div { padding-top: 0 !important; margin-top: 0 !important; }
+[data-testid="stSidebarUserContent"] { padding-top: 1rem !important; }
+
+.block-container { padding-top: 4rem !important; padding-bottom: 1rem !important; }
+hr { margin: 0.4rem 0 !important; }
+
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+}
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button {
+    padding: 0 !important;
+    min-height: 2.35rem !important;
+    height: 2.35rem !important;
+    font-size: 1.15rem !important;
+    line-height: 1 !important;
+    width: 2.35rem !important;
+    border-radius: 0.5rem !important;
+}
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button > div,
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button p {
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 1 !important;
+}
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"],
+[data-testid="stSidebar"] [data-testid="stFormSubmitButton"] button[data-testid="baseButton-primaryFormSubmit"] {
+    height: auto !important;
+    min-height: 2.5rem !important;
+    padding: 0.45rem 1rem !important;
+    font-size: 1rem !important;
+    width: 100% !important;
+    border-radius: 0.5rem !important;
+    line-height: 1.6 !important;
+}
+[data-testid="stSidebar"] h4 {
+    align-items: center !important;
+    display: flex !important;
+    line-height: 1.2 !important;
+    margin: 0 !important;
+    min-height: 2.35rem !important;
+}
+[data-testid="stSidebar"] .sidebar-title {
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 0.15rem;
+}
+[data-testid="stSidebar"] .sidebar-subtitle {
+    color: rgba(128,128,128,0.95);
+    font-size: 0.88rem;
+    line-height: 1.35;
+    margin-bottom: 0.9rem;
+}
+[data-testid="stSidebar"] .sidebar-section {
+    color: rgba(128,128,128,0.95);
+    font-size: 0.76rem;
+    font-weight: 750;
+    letter-spacing: 0.06em;
+    margin: 1rem 0 0.35rem;
+    text-transform: uppercase;
+}
+[data-testid="stSidebar"] .sidebar-status {
+    border: 1px solid rgba(128,128,128,0.18);
+    border-radius: 8px;
+    font-size: 0.86rem;
+    line-height: 1.35;
+    margin: 0.35rem 0 0.6rem;
+    padding: 0.55rem 0.65rem;
+}
+
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
+    gap: 6px;
+    border-bottom: 2px solid rgba(128,128,128,0.25);
+    padding-bottom: 0;
+}
+[data-testid="stTabs"] [data-baseweb="tab"] {
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    padding: 0.65rem 1.6rem !important;
+    border-radius: 8px 8px 0 0 !important;
+    border: 1px solid transparent !important;
+    border-bottom: none !important;
+    background: transparent !important;
+    color: var(--text-color) !important;
+    opacity: 0.6;
+    transition: background 0.15s, color 0.15s;
+}
+[data-testid="stTabs"] [data-baseweb="tab"]:hover {
+    background: var(--secondary-background-color) !important;
+    opacity: 0.9;
+}
+[data-testid="stTabs"] [aria-selected="true"] {
+    background: var(--background-color) !important;
+    color: #e63946 !important;
+    opacity: 1;
+    border-color: rgba(128,128,128,0.25) !important;
+    border-bottom-color: var(--background-color) !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    display: none !important;
+}
+
+div[data-testid="metric-container"] {
+    background: var(--background-color);
+    border: 1px solid rgba(128,128,128,0.2);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+
+.map-loading {
+    border: 1px solid rgba(128,128,128,0.18);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    padding: 0.75rem 0.9rem;
+}
+.map-loading-label {
+    color: rgba(128,128,128,0.95);
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.55rem;
+}
+.map-loading-track {
+    background: rgba(128,128,128,0.16);
+    border-radius: 999px;
+    height: 4px;
+    overflow: hidden;
+}
+.map-loading-bar {
+    animation: mapLoading 1.15s ease-in-out infinite;
+    background: #e63946;
+    border-radius: 999px;
+    height: 100%;
+    width: 42%;
+}
+@keyframes mapLoading {
+    0%   { transform: translateX(-110%); }
+    100% { transform: translateX(260%); }
+}

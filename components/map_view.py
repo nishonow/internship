@@ -4,213 +4,15 @@ import streamlit as st
 from streamlit_folium import st_folium
 from folium.plugins import Draw, FastMarkerCluster
 import pandas as pd
-from html import escape
 from typing import Optional, Dict, Any
 
-_STATION_COLORS = {
-    "KN":  "#8e44ad",
-    "MAG": "#27ae60",
-    "KR":  "#2471a3",
-    "KC":  "#148f77",
-    "KZ":  "#d35400",
-    "QZ":  "#b7950b",
-    "TJ":  "#922b21",
-    "G":   "#566573",
-    "CK":  "#c0392b",
-    "GE":  "#1abc9c",
-}
-
-_NETWORK_NAMES = {
-    "KN":  "KNET (НС РАН)",
-    "MAG": "Геомагнитные станции (НС РАН)",
-    "KR":  "Кыргызстан",
-    "KC":  "ЦАИИЗ",
-    "KZ":  "Казахстан",
-    "QZ":  "Казахстан",
-    "TJ":  "Таджикистан",
-    "G":   "Международный",
-    "CK":  "ЦАИИЗ",
-    "GE":  "Кабул",
-}
-
-_STYLES = {
-    "Светлая (CartoDB)":      ("CartoDB positron",    False),
-    "Тёмная (CartoDB)":       ("CartoDB dark_matter", True),
-    "Улицы (OpenStreetMap)":  ("OpenStreetMap",       False),
-    "Цветная (CartoDB)":      ("CartoDB voyager",     False),
-    "Топо (Esri)":            ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", False),
-    "Спутник (Esri)":         ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", False),
-}
-
-_SVG_SEISMIC = (
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
-    'fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
-    '<polyline points="3,12 6,12 8,4 11,20 13,8 15,16 17,12 21,12"/>'
-    '</svg>'
+from components.map_config import (
+    _STYLES, _SVG_STAR, _NS_RAN,
+    _EQ_CLUSTER_CALLBACK, _DEPTH_LOW, _DEPTH_HIGH,
+    _NETWORK_NAMES, _STATION_COLORS,
+    _earthquake_cluster_data,
+    _legend, _station_icon,
 )
-
-_SVG_HOME = (
-    '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" '
-    'fill="white">'
-    '<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>'
-    '</svg>'
-)
-
-_SVG_STAR = (
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" '
-    'fill="white">'
-    '<polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>'
-    '</svg>'
-)
-
-_NS_RAN = {"name": "НС РАН", "lat": 42.68011, "lon": 74.69265, "color": "#e8a020"}
-
-# FastMarkerCluster renders earthquake points in the browser instead of adding
-# thousands of Folium CircleMarker objects one by one in Python.
-_EQ_CLUSTER_CALLBACK = """
-function (row) {
-    var size = Math.max(8, Math.min(26, row[2] * 1.6));
-    var html = '<div style="width:' + size + 'px;height:' + size + 'px;' +
-        'border-radius:50%;background:' + row[3] + ';border:1px solid rgba(255,255,255,0.75);' +
-        'box-shadow:0 1px 3px rgba(0,0,0,0.28);opacity:0.72;"></div>';
-    var marker = L.marker(new L.LatLng(row[0], row[1]), {
-        icon: L.divIcon({
-            className: 'eq-fast-marker',
-            html: html,
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2]
-        })
-    });
-    marker.bindPopup(row[4], {maxWidth: 220});
-    return marker;
-}
-"""
-
-
-def _depth_color(depth: float, low: float, high: float) -> str:
-    if depth < low:
-        return "#e63946"
-    elif depth < high:
-        return "#f4a261"
-    else:
-        return "#457b9d"
-
-
-def _marker_radius(row) -> float:
-    # K (energy class) is preferred over Ml when available because it is a
-    # more precise local measure. Falls back to Ml if K is absent or NaN.
-    k = row.get("K")
-    if k is not None and pd.notna(k):
-        return max(5, float(k) * 1.1)
-    ml = row.get("Ml", 2)
-    return max(5, float(ml) * 4.5)
-
-
-def _earthquake_cluster_data(df: pd.DataFrame, low: float, high: float) -> list:
-    # The callback receives plain lists, so keep the payload compact and escape
-    # user-provided text before it becomes popup HTML.
-    data = []
-    for _, row in df.iterrows():
-        origin_str = row["Origin"].strftime("%Y-%m-%d %H:%M:%S") if pd.notna(row["Origin"]) else "N/A"
-        depth_val = f"{row['Depth']:.1f}" if pd.notna(row.get("Depth")) else "N/A"
-        k_val = f"{row['K']:.1f}" if pd.notna(row.get("K")) else "—"
-        ml_val = f"{row['Ml']:.1f}" if pd.notna(row.get("Ml")) else "N/A"
-        popup_html = (
-            f"<div style='font-size:13px;line-height:1.8'>"
-            f"<b>Дата:</b> {escape(origin_str)}<br>"
-            f"<b>Широта:</b> {row['Lat']:.4f}<br>"
-            f"<b>Долгота:</b> {row['Lon']:.4f}<br>"
-            f"<b>Глубина:</b> {escape(depth_val)} км<br>"
-            f"<b>M:</b> {escape(ml_val)}<br>"
-            f"<b>K:</b> {escape(k_val)}"
-            f"</div>"
-        )
-        data.append([
-            float(row["Lat"]),
-            float(row["Lon"]),
-            _marker_radius(row),
-            _depth_color(row.get("Depth", 0), low, high),
-            popup_html,
-        ])
-    return data
-
-
-def _legend(dark: bool, low: float, high: float) -> str:
-    if dark:
-        bg = "rgba(30,30,40,0.92)"
-        border = "1px solid rgba(255,255,255,0.1)"
-        color = "#e0e0e0"
-        title_color = "#ffffff"
-    else:
-        bg = "rgba(255,255,255,0.92)"
-        border = "1px solid #ddd"
-        color = "#333"
-        title_color = "#111"
-    return f"""
-    <div style="position:fixed;bottom:30px;right:30px;z-index:1000;
-        background:{bg};padding:12px 16px;border-radius:10px;
-        box-shadow:0 2px 12px rgba(0,0,0,0.3);font-size:13px;
-        line-height:1.9;color:{color};border:{border};">
-        <b style="color:{title_color};">Глубина</b><br>
-        <span style='color:#e63946'>&#9679;</span> Группа 1 (&lt;{low:.0f} км)<br>
-        <span style='color:#f4a261'>&#9679;</span> Группа 2 ({low:.0f}&ndash;{high:.0f} км)<br>
-        <span style='color:#457b9d'>&#9679;</span> Группа 3 (&gt;{high:.0f} км)
-    </div>
-    """
-
-
-# Depth thresholds in km that define the three color groups.
-# Change these two values to adjust grouping across the map, legend, and table.
-_DEPTH_LOW  = 10
-_DEPTH_HIGH = 20
-
-
-def _station_icon(network: str) -> folium.DivIcon:
-    color = _STATION_COLORS.get(network, "#888888")
-    svg = _SVG_HOME if network == "MAG" else _SVG_SEISMIC
-    html = (
-        f'<div style="position:relative;text-align:center;width:32px;height:44px;">'
-        f'<div style="position:absolute;top:0;left:2px;width:28px;height:28px;'
-        f'background:{color};border-radius:50%;border:2px solid white;'
-        f'box-shadow:0 2px 6px rgba(0,0,0,0.5);display:flex;'
-        f'align-items:center;justify-content:center;">'
-        f'{svg}</div>'
-        f'<div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);'
-        f'width:0;height:0;border-left:7px solid transparent;'
-        f'border-right:7px solid transparent;border-top:16px solid {color};">'
-        f'</div></div>'
-    )
-    return folium.DivIcon(html=html, icon_size=(32, 44), icon_anchor=(16, 44))
-
-
-# The dialog uses separate "dlg_" prefixed keys because Streamlit dialogs run
-# in an isolated scope. The Apply button copies the dialog state into the main
-# session_state keys that render_map reads, then reruns the full page.
-@st.dialog("Сети")
-def _seti_dialog(all_nets: list, has_stations: bool) -> None:
-    if all_nets:
-        for net in all_nets:
-            name = _NETWORK_NAMES.get(net, "")
-            label = f"{net} — {name}" if name else net
-            st.checkbox(label, value=st.session_state.get(f"map_net_{net}", False), key=f"dlg_net_{net}")
-        st.divider()
-
-    st.checkbox("НС РАН", value=st.session_state.get("map_ns_ran", False), key="dlg_ns_ran")
-    st.checkbox("Землетрясения", value=st.session_state.get("show_earthquakes", True), key="dlg_earthquakes")
-
-    if st.button("Применить", type="primary", use_container_width=True):
-        if has_stations:
-            for net in all_nets:
-                st.session_state[f"map_net_{net}"] = st.session_state[f"dlg_net_{net}"]
-        st.session_state["map_ns_ran"] = st.session_state["dlg_ns_ran"]
-        st.session_state["show_earthquakes"] = st.session_state["dlg_earthquakes"]
-        st.rerun()
-
-
-@st.fragment
-def _layer_controls(all_nets: list, has_stations: bool) -> None:
-    if st.button("Сети"):
-        _seti_dialog(all_nets, has_stations)
 
 
 def _extract_drawn_bbox(map_data: Optional[dict]) -> Optional[dict]:
@@ -245,18 +47,18 @@ def draw_bbox_dialog(lat_min: float, lat_max: float, lon_min: float, lon_max: fl
         "<style>.leaflet-control-attribution{display:none!important}</style>"
     ))
     m.get_root().html.add_child(folium.Element("""
-    <script>
-    (function() {
-    var dl = window.L && L.drawLocal;
-    if (!dl) return;
-    dl.draw.toolbar.actions.title = 'Отменить рисование';
-    dl.draw.toolbar.actions.text  = 'Отменить';
-    dl.draw.toolbar.buttons.rectangle = 'Нарисовать прямоугольник';
-    dl.draw.handlers.rectangle.tooltip.start       = 'Нажмите и перетащите для выделения области.';
-    dl.draw.handlers.simpleshape.tooltip.end        = 'Отпустите для завершения.';
-    })();
-    </script>
-    """))
+<script>
+(function() {
+  var dl = window.L && L.drawLocal;
+  if (!dl) return;
+  dl.draw.toolbar.actions.title = 'Отменить рисование';
+  dl.draw.toolbar.actions.text  = 'Отменить';
+  dl.draw.toolbar.buttons.rectangle = 'Нарисовать прямоугольник';
+  dl.draw.handlers.rectangle.tooltip.start    = 'Нажмите и перетащите для выделения области.';
+  dl.draw.handlers.simpleshape.tooltip.end    = 'Отпустите для завершения.';
+})();
+</script>
+"""))
     Draw(
         draw_options={
             "rectangle": {"shapeOptions": {"color": "#e63946", "weight": 2, "fillOpacity": 0.05}},
@@ -296,6 +98,36 @@ def draw_bbox_dialog(lat_min: float, lat_max: float, lon_min: float, lon_max: fl
             st.rerun()
 
 
+# The dialog uses separate "dlg_" prefixed keys because Streamlit dialogs run
+# in an isolated scope. The Apply button copies the dialog state into the main
+# session_state keys that render_map reads, then reruns the full page.
+@st.dialog("Сети")
+def _seti_dialog(all_nets: list, has_stations: bool) -> None:
+    if all_nets:
+        for net in all_nets:
+            name = _NETWORK_NAMES.get(net, "")
+            label = f"{net} — {name}" if name else net
+            st.checkbox(label, value=st.session_state.get(f"map_net_{net}", False), key=f"dlg_net_{net}")
+        st.divider()
+
+    st.checkbox("НС РАН", value=st.session_state.get("map_ns_ran", False), key="dlg_ns_ran")
+    st.checkbox("Землетрясения", value=st.session_state.get("show_earthquakes", True), key="dlg_earthquakes")
+
+    if st.button("Применить", type="primary", use_container_width=True):
+        if has_stations:
+            for net in all_nets:
+                st.session_state[f"map_net_{net}"] = st.session_state[f"dlg_net_{net}"]
+        st.session_state["map_ns_ran"] = st.session_state["dlg_ns_ran"]
+        st.session_state["show_earthquakes"] = st.session_state["dlg_earthquakes"]
+        st.rerun()
+
+
+@st.fragment
+def _layer_controls(all_nets: list, has_stations: bool) -> None:
+    if st.button("Сети"):
+        _seti_dialog(all_nets, has_stations)
+
+
 def render_map(
     df: pd.DataFrame,
     bbox: Optional[dict] = None,
@@ -305,7 +137,7 @@ def render_map(
     _low, _high = _DEPTH_LOW, _DEPTH_HIGH
     if df.empty:
         st.warning("Нет землетрясений по текущим фильтрам.", icon=":material/filter_alt_off:")
-        return None
+        return
 
     has_stations = df_stations is not None and not df_stations.empty
 
@@ -325,18 +157,13 @@ def render_map(
         all_nets = []
 
     col_style, col_btn = st.columns([2, 4], vertical_alignment="bottom")
-
     with col_style:
         style_names = list(_STYLES.keys())
-        style_name = st.selectbox(
-            "Стиль карты", style_names, index=0, key="map_style",
-        )
-
+        style_name = st.selectbox("Стиль карты", style_names, index=0, key="map_style")
     with col_btn:
         _layer_controls(all_nets, has_stations)
 
     show_earthquakes = st.session_state.get("show_earthquakes", True)
-
     tile_url, is_dark = _STYLES[style_name]
     is_custom_url = tile_url.startswith("http")
 
@@ -384,6 +211,7 @@ def render_map(
         ).add_to(m)
 
     if has_stations:
+        from html import escape
         for _, srow in df_stations.iterrows():
             if pd.isna(srow.get("Lat")) or pd.isna(srow.get("Lon")):
                 continue
@@ -461,8 +289,8 @@ def render_map(
     eq_count = len(df)
 
     if circle:
-        filter_icon = "◎"
         filter_desc = f"Круг &nbsp;·&nbsp; центр {circle['lat']:.4f}°N, {circle['lon']:.4f}°E &nbsp;·&nbsp; радиус {circle['radius_km']:.0f} км"
+        filter_icon = "◎"
     else:
         filter_desc = (
             f"Прямоугольник &nbsp;·&nbsp; {bbox['lat_min']:.4f}°–{bbox['lat_max']:.4f}°N, "
