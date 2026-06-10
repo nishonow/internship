@@ -61,7 +61,7 @@ with st.sidebar:
     st.markdown(
         f"""
         <div class="sidebar-status">
-            <b>{len(df_raw):,}</b> событий<br>
+            Количество событий: <b>{len(df_raw):,}</b><br>
             {df_raw["Origin"].min().date()} — {df_raw["Origin"].max().date()}
         </div>
         """,
