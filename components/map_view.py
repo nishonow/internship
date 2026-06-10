@@ -207,7 +207,7 @@ def render_map(
         FastMarkerCluster(
             data=_earthquake_cluster_data(df, _low, _high),
             callback=_EQ_CLUSTER_CALLBACK,
-            options={"spiderfyOnMaxZoom": True, "disableClusteringAtZoom": 18, "minimumClusterSize": 3},
+            options={"spiderfyOnMaxZoom": True, "maxClusterRadius": 30, "minimumClusterSize": 6},
         ).add_to(m)
 
     if has_stations:
